@@ -7,7 +7,7 @@ import plotly.express as px
 from app import app
 
 # Chargement des données
-data = pd.read_csv(r'dashbord_dash\ressources\brut_test.csv')
+data = pd.read_csv(r'C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\datasets\brut_test.csv')
 numeric_columns = data.select_dtypes(include=['number']).columns
 
 # Parcourez les colonnes numériques et appliquez la transformation

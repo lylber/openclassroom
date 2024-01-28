@@ -7,8 +7,7 @@ import base64
 from ressources.dico_features import data_dictionary
 
 # Récupérer le chemin du script
-script_directory = os.path.dirname(r"dashbord_dash\\")
-
+script_directory = os.path.dirname(r"C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\dashbord_dash\\")
 # Charger l'image et la convertir en base64
 with open(os.path.join(script_directory, "ressources", "logo_projet_fintech.png"), "rb") as image_file:
     encoded_image = base64.b64encode(image_file.read()).decode('utf-8')

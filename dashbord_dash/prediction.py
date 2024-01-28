@@ -10,6 +10,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 import dash_table
 import warnings
+from ressources.shap_plot import *
 from app import app
 
 # Suppress the InconsistentVersionWarning
@@ -17,32 +18,53 @@ warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 # Move loading outside the main script
 def load_data():
-    scaler = MinMaxScaler()
-    model = joblib.load(r'dashbord_dash\model\regression_logistique_model_v2.pkl')
-    data = pd.read_csv(r'datasets\test.csv')
-    data_brut=pd.read_csv(r'dashbord_dash\ressources\brut_test.csv')
+    model = joblib.load(r'C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\dashbord_dash\model\best_model.pkl')
+    data = pd.read_csv(r'C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\datasets\test.csv')
+    data_brut=pd.read_csv(r'C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\datasets\brut_test.csv')
+    train=pd.read_csv(r'C:\Users\Hilbert\Documents\OpenClassRoom\Projet7\openclassroom\datasets\train.csv')
+
+    scaler= model.named_steps['scaler']
+
     data_brut=data_brut[data_brut['SK_ID_CURR'].isin(data.SK_ID_CURR)]
     d = data.drop(['SK_ID_CURR'], axis=1)
-    scaled_features = scaler.fit_transform(d)
+    scaled_features = scaler.transform(d)
     df_scaled = pd.DataFrame(scaled_features, columns=d.columns)
     df_scaled['SK_ID_CURR'] = data['SK_ID_CURR'].astype(int)
-    data_brut['AGE']=-data['AGE']
+    data_brut['AGE']=data['AGE']
     data_brut['AGE']=data_brut['AGE'].astype(int)
-    return model, df_scaled, data_brut
 
-model, data, data_brut = load_data()
+    if 'r' in model.named_steps:
+        rfe_step = model.named_steps['r']
+    
+        if hasattr(rfe_step, 'support_'):
+            # If RFE step has a 'support_' attribute
+            selected_features_mask = rfe_step.support_
+            selected_columns = data.drop(['SK_ID_CURR'],axis=1).columns[selected_features_mask]
+        else:
+            print("RFE step does not have 'support_' attribute.")
+     
+    else:
+        print("No 'r' (RFE) step found in the pipeline.")
+
+    scaler= model.named_steps['scaler']
+
+    return model, df_scaled, data_brut, selected_columns, scaler, train
+
+model, data, data_brut, selected_columns, scaler, train = load_data()
+
+train=pd.DataFrame(scaler.transform(train.drop(['TARGET'],axis=1)), columns=train.drop(['TARGET'],axis=1).columns, index=train.index)
+train=train[selected_columns]
+
+logistic_regression_model = model.named_steps['m']
+
+
+
+# Initialisation de l'application Dash
+#app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 param = {'color': '#8badda'}
 
-# Define the get_heat_color function to generate a gradient color
-def get_heat_color(value):
-    # Ensure the value is within the valid range [0, 1]
-    value = max(0, min(1, value))
-    
-    # Calculate color based on the importance value
-    red = int((1 - value) * 255)
-    green = int(value * 255)
-    return f'rgb({red}, {green}, 0)'
+
 
 # Create a sample layout for the DataTable
 table_layout = dash_table.DataTable(
@@ -101,38 +123,32 @@ layout = html.Div(children=[
     [Input('input-customer-id', 'value')],
     allow_duplicate=True
 )
+
 def update_prediction(customer_id):
     
     try:
         customer_id = int(customer_id)
-        input_features = data[data['SK_ID_CURR'] == customer_id].iloc[:, :-1].values
+        
+        input_features = data[data['SK_ID_CURR'] == customer_id].loc[:, data.columns != 'SK_ID_CURR']
 
-        # Normalize input features before prediction
-        scaler = MinMaxScaler()
-        input_features_scaled = scaler.fit_transform(input_features)
+        input_features_scaled = pd.DataFrame(scaler.transform(input_features), columns=input_features.columns, index=input_features.index)
 
         prediction = model.predict(input_features_scaled)[0]
         probabilities = model.predict_proba(input_features_scaled)[0]
-
         positive_probability = probabilities[1]
 
-        logistic_classifier = model.named_steps['m']
-        coefficients = logistic_classifier.coef_[0]
-
-        df = pd.DataFrame({'Variable': data.iloc[:, :-1].columns, 'Importance': coefficients})
-        df = df.sort_values(by='Importance', ascending=False)
-
         print(f"DEBUG: Prediction: {prediction}, Positive Probability: {positive_probability}")
-
-        # Use go.Figure directly for the bar chart
-        fig = go.Figure()
+        
+        fig=shap_plot(input_features_scaled,positive_probability,logistic_regression_model, train,selected_columns)[1]
 
         # Add a horizontal bar for each variable with a gradient color
-        for i, (variable, importance) in enumerate(zip(df['Variable'], df['Importance'])):
-            color = get_heat_color(importance)
-            fig.add_trace(go.Bar(x=[importance], y=[variable], orientation='h', marker=dict(color=color), name=f'Variable {i + 1}'))
 
-        fig.update_layout(title='Importance des variables dans le modèle de régression logistique', xaxis_title='Importance', yaxis_title='Variables')
+        
+        if prediction == 1:
+            prediction='non solvable'
+        else:
+            prediction='solvable'
+            positive_probability=1-positive_probability
 
         # Update the progress bar value based on the positive probability
         progress_value = int(positive_probability * 100)
@@ -145,10 +161,7 @@ def update_prediction(customer_id):
         selected_data = data_brut.loc[data_brut['SK_ID_CURR'] == customer_id,  ['SK_ID_CURR', 'AGE','CODE_GENDER', 'NAME_FAMILY_STATUS', 'CNT_CHILDREN',]]
         table_data = selected_data.to_dict(orient='records')
 
-        if prediction == 1:
-            prediction='non solvable'
-        else:
-            prediction='solvable'
+
 
         print(f"DEBUG: Table Data: {table_data}")
 
